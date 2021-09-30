@@ -13,8 +13,6 @@ mobile/android/local.properties
 server/public/.galaxy/
 server/public/.gradle/
 server/public/.idea/
-server/gradle/
-server/gradlew
 server/.galaxy/
 server/.gradle/
 server/.idea/
