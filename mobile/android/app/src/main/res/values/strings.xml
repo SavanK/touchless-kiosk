@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">Touchless Kiosk</string>
+    <string name="register_kiosk">Register kiosk</string>
+    <string name="unregister_kiosk">Unregister kiosk</string>
+    <string name="enable_screen_capture">Enable screen capture</string>
+    <string name="disable_screen_capture">Disable screen capture</string>
+    <string name="kiosk_stream_status">Kiosk stream status: </string>
+    <string name="connection_status">Connection status: </string>
+
+    <string name="stream_status_not_streaming">Not streaming</string>
+    <string name="stream_status_streaming">Streaming</string>
+    <string name="stream_status_ready_to_stream">Ready to stream</string>
+
+    <string name="connection_status_connected">Connected</string>
+    <string name="connection_status_disconnected">Disconnected</string>
+    <string name="active_customer">Active customer: </string>
+</resources>
