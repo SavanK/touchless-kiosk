@@ -23,7 +23,7 @@ const MESSAGE_TYPE_RESPONSE = "response";
 const connectButton = document.getElementById('connect');
 connectButton.addEventListener('click', connect);
 
-const wsUri = "wss://safe-kiosk.herokuapp.com/connectkiosk";
+const wsUri = "wss://touchless-kiosk.herokuapp.com/connectkiosk";
 let websocket;
 let activeConnection;
 const customerId = uuidv4();
