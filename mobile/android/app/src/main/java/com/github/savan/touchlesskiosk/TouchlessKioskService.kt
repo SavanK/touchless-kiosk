@@ -1,6 +1,5 @@
 package com.github.savan.touchlesskiosk
 
-import android.R.id.message
 import android.annotation.TargetApi
 import android.app.Notification
 import android.app.NotificationChannel

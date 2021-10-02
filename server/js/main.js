@@ -23,6 +23,9 @@ const MESSAGE_TYPE_RESPONSE = "response";
 const connectButton = document.getElementById('connect');
 connectButton.addEventListener('click', connect);
 
+const disconnectButton = document.getElementById('disconnect');
+disconnectButton.addEventListener('click', disconnect);
+
 const wsUri = "wss://touchless-kiosk.herokuapp.com/connectkiosk";
 let websocket;
 let activeConnection;
@@ -219,8 +222,10 @@ function doSend(message) {
   websocket.send(message);
 }
 
-function disconnect() {
+async function disconnect() {
   console.log("DISCONNECTING ...");
+  hangup()
+  doSend(JSON.stringify(constructRequest(REQUEST_DISCONNECT_KIOSK, customerId, getQueryParameter('kiosk'), "")));
   websocket.close();
 }
 
@@ -237,6 +242,18 @@ remoteVideo.addEventListener('resize', () => {
     console.log('Setup time: ' + elapsedTime.toFixed(3) + 'ms');
     startTime = null;
   }
+  var videoAR = remoteVideo.videoHeight/remoteVideo.videoWidth;
+  var newHeight = remoteVideo.videoHeight;
+  var newWidth = remoteVideo.videoWidth;
+  console.log(`screen.availHeight=${window.screen.availHeight}`);
+  if(remoteVideo.videoHeight > window.screen.availHeight) {
+    console.log("resizing video");
+    var newHeight = window.screen.availHeight * 0.6;
+    var newWidth = newHeight/videoAR;
+    console.log(`newHeight: ${newHeight} newWidth: ${newWidth}`);
+  }
+  remoteVideo.height = newHeight;
+  remoteVideo.width = newWidth;
 });
 
 async function onIceCandidate(evt) {
@@ -263,8 +280,8 @@ function onIceStateChange(evt) {
 
 function hangup() {
   console.log('Ending call');
-  pc1.close();
-  peerConnection.close();
-  pc1 = null;
+  if(peerConnection != null) {
+    peerConnection.close();
+  }
   peerConnection = null;
 }
