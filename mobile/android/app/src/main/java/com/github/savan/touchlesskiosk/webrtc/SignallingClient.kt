@@ -3,6 +3,8 @@ package com.github.savan.touchlesskiosk.webrtc
 import android.content.Context
 import com.github.savan.touchlesskiosk.utils.Logger
 import com.github.savan.touchlesskiosk.utils.StorageUtils
+import com.github.savan.touchlesskiosk.webrtc.model.Connection
+import com.github.savan.touchlesskiosk.webrtc.model.Kiosk
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import io.ktor.client.*
@@ -18,7 +20,6 @@ import java.lang.ref.WeakReference
 import java.util.*
 import kotlin.reflect.KClass
 
-@ExperimentalCoroutinesApi
 class SignallingClient : ISignallingClient, CoroutineScope {
     companion object {
         private const val TAG = "SignallingClient"
@@ -31,19 +32,15 @@ class SignallingClient : ISignallingClient, CoroutineScope {
         private const val REQUEST_DISCONNECT_KIOSK = "disconnect_kiosk"
         private const val REQUEST_WEB_RTC_TRANSPORT = "web_rtc_transport"
 
-        private const val KEY_SIGNAL_HOST = "signal_host_address"
         private const val KEY_KIOSK_ID = "kiosk_id"
 
-        private const val DEFAULT_HOST = "safe-kiosk.herokuapp.com"
+        private const val HOST = "touchless-kiosk.herokuapp.com"
     }
 
-    data class Connection(val customer: Customer, val kiosk: Kiosk)
-    data class Customer(val customerId: String)
-    data class Kiosk(val kioskId: String)
     data class Request(val requestId: String, val payload: String, val webRtcPayload: String)
     data class Response(
-            val requestId: String, val result: String, val message: String, val payload: String,
-            val webRtcPayload: String
+        val requestId: String, val result: String, val message: String, val payload: String,
+        val webRtcPayload: String
     )
     // The Android SDK classes [SessionDescription] and [IceCandidate] are not matching the web SDK class structure
     // Hence the remapping
@@ -51,6 +48,8 @@ class SignallingClient : ISignallingClient, CoroutineScope {
     data class IceCandidateWeb(val type: String, val sdpMLineIndex: Int, val sdpMid: String, val candidate: String)
 
     private lateinit var context: WeakReference<Context>
+
+    private var myKiosk: Kiosk? = null
     private var registered = false
     private var signalListener: ISignallingClient.ISignalListener? = null
     private var activeConnection: Connection? = null
@@ -66,7 +65,6 @@ class SignallingClient : ISignallingClient, CoroutineScope {
         }
     }
 
-    @ExperimentalCoroutinesApi
     private val sendChannel = ConflatedBroadcastChannel<String>()
 
     override fun initialize(c: Context, listener: ISignallingClient.ISignalListener) {
@@ -75,7 +73,6 @@ class SignallingClient : ISignallingClient, CoroutineScope {
         connectToServer()
     }
 
-    @ExperimentalCoroutinesApi
     override fun registerKiosk() {
         if(!registered) {
             // Send my kiosk info to register with the server
@@ -84,11 +81,13 @@ class SignallingClient : ISignallingClient, CoroutineScope {
                     StorageUtils.set(it, KEY_KIOSK_ID, UUID.randomUUID().toString())
                 }
 
-                StorageUtils.get(it, KEY_KIOSK_ID)?.let {
-                    val myKiosk = Kiosk(it)
-                    Logger.d(TAG, "registerKiosk, registering $myKiosk with server")
-                    val request = Request(REQUEST_REGISTER_KIOSK, toJsonString(myKiosk), "")
-                    send(request)
+                StorageUtils.get(it, KEY_KIOSK_ID)?.let { kioskId ->
+                    myKiosk = Kiosk(kioskId)
+                    myKiosk?.let { kiosk ->
+                        Logger.d(TAG, "registerKiosk, registering $kiosk with server")
+                        val request = Request(REQUEST_REGISTER_KIOSK, toJsonString(kiosk), "")
+                        send(request)
+                    }
                 }
             }
         }
@@ -110,103 +109,108 @@ class SignallingClient : ISignallingClient, CoroutineScope {
         activeConnection = null
     }
 
-    @ExperimentalCoroutinesApi
-    private fun connectToServer() = launch {
-        val host = context.get()?.let { StorageUtils.get(it, KEY_SIGNAL_HOST)} ?: DEFAULT_HOST
-        Logger.d(TAG, "connectToServer, host:$host")
-        client.wss(host = host,
+    private fun connectToServer() {
+        launch {
+            Logger.d(TAG, "connectToServer, host:$HOST")
+            client.wss(host = HOST,
                 path = "/registerkiosk") {
-            signalListener?.onConnectionEstablished()
-            val sendData = sendChannel.openSubscription()
-            try {
-                while (true) {
-                    sendData.poll()?.let {
-                        Logger.d(TAG, "Sending: $it")
-                        outgoing.send(Frame.Text(it))
-                    }
+                val sendData = sendChannel.openSubscription()
+                try {
+                    while (true) {
+                        sendData.poll()?.let {
+                            Logger.d(TAG, "Sending: $it")
+                            outgoing.send(Frame.Text(it))
+                        }
 
-                    incoming.poll()?.let { data ->
-                        if (data is Frame.Text) {
-                            when(getClassOfObject(data.readText())) {
-                                Request::class -> {
-                                    val request = gson.fromJson<Request>(data.readText(), Request::class.java)
-                                    Logger.d(TAG, "Request: $request")
-                                    when(request.requestId) {
-                                        REQUEST_CONNECT_KIOSK -> {
-                                            val connection = gson.fromJson<Connection>(
+                        incoming.poll()?.let { data ->
+                            if (data is Frame.Text) {
+                                when(getClassOfObject(data.readText())) {
+                                    Request::class -> {
+                                        val request = gson.fromJson<Request>(data.readText(), Request::class.java)
+                                        Logger.d(TAG, "Request: $request")
+                                        when(request.requestId) {
+                                            REQUEST_CONNECT_KIOSK -> {
+                                                val connection = gson.fromJson<Connection>(
                                                     request.payload,
                                                     Connection::class.java
-                                            )
+                                                )
 
-                                            activeConnection = connection
+                                                activeConnection = connection
 
-                                            send(Response(REQUEST_CONNECT_KIOSK, SUCCESS,
+                                                send(Response(REQUEST_CONNECT_KIOSK, SUCCESS,
                                                     "", toJsonString(connection), ""))
 
-                                            // Start screen recording now
-                                            withContext(Dispatchers.Main) {
-                                                signalListener?.onConnectionRequestReceived()
+                                                // Start screen recording now
+                                                withContext(Dispatchers.Main) {
+                                                    signalListener?.onConnectionEstablished(connection)
+                                                }
                                             }
-                                        }
-                                        REQUEST_DISCONNECT_KIOSK -> {
-                                            val connection = gson.fromJson<Connection>(
+                                            REQUEST_DISCONNECT_KIOSK -> {
+                                                val connection = gson.fromJson<Connection>(
                                                     request.payload,
                                                     Connection::class.java
-                                            )
+                                                )
 
-                                            activeConnection = null
+                                                if(activeConnection == connection) {
+                                                    send(
+                                                        Response(
+                                                            REQUEST_DISCONNECT_KIOSK, SUCCESS,
+                                                            "", toJsonString(connection), ""
+                                                        )
+                                                    )
 
-                                            // Stop screen recording now
-                                            withContext(Dispatchers.Main) {
-                                                signalListener?.onDisconnectionRequestReceived()
+                                                    // Stop screen recording now
+                                                    withContext(Dispatchers.Main) {
+                                                        signalListener?.onConnectionTeardown(connection)
+                                                    }
+
+                                                    activeConnection = null
+                                                }
                                             }
-
-                                            send(Response(REQUEST_DISCONNECT_KIOSK, SUCCESS,
-                                                    "", toJsonString(connection), ""))
                                         }
                                     }
-                                }
-                                Response::class -> {
-                                    val response = gson.fromJson<Response>(data.readText(), Response::class.java)
-                                    Logger.d(TAG, "Response: $response")
-                                    when(response.requestId) {
-                                        REQUEST_REGISTER_KIOSK -> {
-                                            registered = SUCCESS.compareTo(response.result, true) == 0
-                                            if(registered) {
-                                                signalListener?.onKioskRegistered()
+                                    Response::class -> {
+                                        val response = gson.fromJson<Response>(data.readText(), Response::class.java)
+                                        Logger.d(TAG, "Response: $response")
+                                        when(response.requestId) {
+                                            REQUEST_REGISTER_KIOSK -> {
+                                                registered = SUCCESS.compareTo(response.result, true) == 0
+                                                if(registered) {
+                                                    myKiosk?.let { signalListener?.onKioskRegistered(it) }
+                                                }
+                                                Logger.d(TAG, "registerKiosk, registration result: $registered")
                                             }
-                                            Logger.d(TAG, "registerKiosk, registration result: $registered")
-                                        }
-                                        REQUEST_WEB_RTC_TRANSPORT -> {
-                                            val connection = gson.fromJson<Connection>(
+                                            REQUEST_WEB_RTC_TRANSPORT -> {
+                                                val connection = gson.fromJson<Connection>(
                                                     response.payload,
                                                     Connection::class.java
-                                            )
-                                            if(connection == activeConnection) {
-                                                val webRtcPayload = gson.fromJson(
+                                                )
+                                                if(connection == activeConnection) {
+                                                    val webRtcPayload = gson.fromJson(
                                                         response.webRtcPayload,
                                                         JsonObject::class.java
-                                                )
-                                                withContext(Dispatchers.Main) {
-                                                    webRtcPayload?.let {
-                                                        if (webRtcPayload.has("candidate")) {
-                                                            val iceCandidateWeb = gson.fromJson(webRtcPayload, IceCandidateWeb::class.java)
-                                                            signalListener?.onIceCandidateReceived(
+                                                    )
+                                                    withContext(Dispatchers.Main) {
+                                                        webRtcPayload?.let {
+                                                            if (webRtcPayload.has("candidate")) {
+                                                                val iceCandidateWeb = gson.fromJson(webRtcPayload, IceCandidateWeb::class.java)
+                                                                signalListener?.onIceCandidateReceived(
                                                                     IceCandidate(iceCandidateWeb.sdpMid,
-                                                                            iceCandidateWeb.sdpMLineIndex,
-                                                                            iceCandidateWeb.candidate))
-                                                        } else if (webRtcPayload.has("type") && webRtcPayload.get("type").asString == "answer") {
-                                                            // Do extra conversion
-                                                            val answer = gson.fromJson(webRtcPayload, SessionDescriptionWeb::class.java)
-                                                            signalListener?.onAnswerReceived(SessionDescription(
+                                                                        iceCandidateWeb.sdpMLineIndex,
+                                                                        iceCandidateWeb.candidate))
+                                                            } else if (webRtcPayload.has("type") && webRtcPayload.get("type").asString == "answer") {
+                                                                // Do extra conversion
+                                                                val answer = gson.fromJson(webRtcPayload, SessionDescriptionWeb::class.java)
+                                                                signalListener?.onAnswerReceived(SessionDescription(
                                                                     when (answer.type) {
                                                                         "answer" -> SessionDescription.Type.ANSWER
                                                                         "pranswer" -> SessionDescription.Type.PRANSWER
                                                                         "offer" -> SessionDescription.Type.OFFER
                                                                         else -> SessionDescription.Type.ANSWER
                                                                     }, answer.sdp))
-                                                        } else {
-                                                            // do nothing
+                                                            } else {
+                                                                // do nothing
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -217,23 +221,29 @@ class SignallingClient : ISignallingClient, CoroutineScope {
                             }
                         }
                     }
+                } catch (e: Exception) {
+                    Logger.e(TAG, "registerKiosk, exception: ${e.printStackTrace()}")
                 }
-            } catch (e: Exception) {
-                Logger.e(TAG, "registerKiosk, exception: ${e.printStackTrace()}")
             }
         }
     }
 
-    @ExperimentalCoroutinesApi
-    private fun send(data: Any) = runBlocking {
-        sendChannel.send(toJsonString(data))
+    private fun send(data: Any) {
+        runBlocking {
+            sendChannel.send(toJsonString(data))
+        }
     }
 
-    @ExperimentalCoroutinesApi
-    private fun sendWebRtc(webRtcPayload: Any) = runBlocking {
-        activeConnection?.let {
-            send(Request(REQUEST_WEB_RTC_TRANSPORT, toJsonString(it),
-                    toJsonString(webRtcPayload)))
+    private fun sendWebRtc(webRtcPayload: Any) {
+        runBlocking {
+            activeConnection?.let {
+                send(
+                    Request(
+                        REQUEST_WEB_RTC_TRANSPORT, toJsonString(it),
+                        toJsonString(webRtcPayload)
+                    )
+                )
+            }
         }
     }
 

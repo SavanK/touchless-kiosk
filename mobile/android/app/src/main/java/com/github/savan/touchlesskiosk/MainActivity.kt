@@ -15,6 +15,8 @@ import android.widget.TextView
 import android.widget.Toast
 import com.github.savan.touchlesskiosk.utils.Logger
 import com.github.savan.touchlesskiosk.webrtc.IRtcClient
+import com.github.savan.touchlesskiosk.webrtc.model.Connection
+import com.github.savan.touchlesskiosk.webrtc.model.Kiosk
 
 class MainActivity : AppCompatActivity() {
     companion object {
@@ -35,7 +37,7 @@ class MainActivity : AppCompatActivity() {
         @SuppressLint("SetTextI18n")
         override fun onStatusChange(status: Int) {
             Logger.d(TAG, "onStatusChange, status: $status")
-            kioskStreamStatusView.text = getString(R.string.kiosk_stream_status) +
+            kioskStreamStatusView.text = getString(R.string.kiosk_id) +
                     getStreamStatusString(status)
         }
 
@@ -58,17 +60,41 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val kioskListener = object : IKioskListener.Stub() {
-        override fun onKioskRegistered() {
-            Logger.d(TAG, "onKioskRegistered")
-            // TODO switch to UI thread
-            /*Toast.makeText(this@MainActivity, "Kiosk registered with server",
-                Toast.LENGTH_SHORT).show()*/
+        override fun onKioskRegistered(kiosk: Kiosk) {
+            Logger.d(TAG, "onKioskRegistered, kiosk: $kiosk")
+            runOnUiThread {
+                Toast.makeText(this@MainActivity,
+                "Kiosk registered with server", Toast.LENGTH_SHORT).show()
+                kioskStreamStatusView.text = getString(R.string.kiosk_id) + kiosk.kioskId
+            }
         }
 
-        override fun onKioskUnregistered() {
-            Logger.d(TAG, "onKioskUnregistered")
-            /*Toast.makeText(this@MainActivity, "Kiosk unregistered with server",
-                Toast.LENGTH_SHORT).show()*/
+        override fun onKioskUnregistered(kiosk: Kiosk) {
+            Logger.d(TAG, "onKioskUnregistered, kiosk: $kiosk")
+            runOnUiThread {
+                Toast.makeText(this@MainActivity,
+                "Kiosk unregistered with server", Toast.LENGTH_SHORT).show()
+                kioskStreamStatusView.text = getString(R.string.kiosk_id) + "null"
+            }
+        }
+
+        @SuppressLint("SetTextI18n")
+        override fun onConnectionEstablished(connection: Connection) {
+            Logger.d(TAG, "onConnectionEstablished, connection: $connection")
+            runOnUiThread {
+                connectionStatusView.text = getString(R.string.connection_status) + "CONNECTED"
+                activeCustomerView.text = getString(R.string.active_customer) +
+                        connection.customer.customerId
+            }
+        }
+
+        @SuppressLint("SetTextI18n")
+        override fun onConnectionTeardown(connection: Connection) {
+            Logger.d(TAG, "onConnectionTeardown, connection: $connection")
+            runOnUiThread {
+                connectionStatusView.text = getString(R.string.connection_status) + "NOT_CONNECTED"
+                activeCustomerView.text = getString(R.string.active_customer) + "null"
+            }
         }
     }
 

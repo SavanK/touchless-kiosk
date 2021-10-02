@@ -1,6 +1,5 @@
 package com.github.savan.touchlesskiosk.webrtc
 
-import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -143,13 +142,6 @@ class RtcClient(val context: Application, observer: PeerConnection.Observer): IR
 
     override fun getStreamingStatus(): IRtcClient.IStreamListener.STATUS {
         return streamStatus
-    }
-
-    fun createScreenCapturer(resultCode: Int, data: Intent) {
-        if (resultCode != Activity.RESULT_OK) {
-            Logger.e(TAG, "User didn't give permission to capture the screen.")
-            return
-        }
     }
 
     private fun getWindowMeasurement(): Pair<Int, Int> {

@@ -1,20 +1,20 @@
 package com.github.savan.touchlesskiosk.webrtc
 
 import android.content.Context
+import com.github.savan.touchlesskiosk.webrtc.model.Connection
+import com.github.savan.touchlesskiosk.webrtc.model.Kiosk
 import org.webrtc.IceCandidate
 import org.webrtc.SessionDescription
 
 interface ISignallingClient {
     interface ISignalListener {
-        fun onKioskRegistered()
+        fun onKioskRegistered(kiosk: Kiosk)
 
-        fun onKioskUnregistered()
+        fun onKioskUnregistered(kiosk: Kiosk)
 
-        fun onConnectionRequestReceived()
+        fun onConnectionEstablished(connection: Connection)
 
-        fun onConnectionEstablished()
-
-        fun onDisconnectionRequestReceived()
+        fun onConnectionTeardown(connection: Connection)
 
         fun onOfferReceived(description: SessionDescription)
 

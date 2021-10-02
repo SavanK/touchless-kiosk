@@ -1,21 +1,34 @@
 package com.github.savan.touchlesskiosk
 
+import android.R.id.message
+import android.annotation.TargetApi
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.IBinder
 import android.view.MotionEvent
+import androidx.core.app.NotificationCompat
 import com.github.savan.touchlesskiosk.utils.Logger
-import com.github.savan.touchlesskiosk.utils.NotificationUtils
 import com.github.savan.touchlesskiosk.webrtc.*
+import com.github.savan.touchlesskiosk.webrtc.model.Connection
+import com.github.savan.touchlesskiosk.webrtc.model.Kiosk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import org.webrtc.IceCandidate
 import org.webrtc.PeerConnection
 import org.webrtc.SessionDescription
-import java.util.*
+
 
 class TouchlessKioskService: Service() {
     companion object {
-        private const val TAG = "ScreenCaptureService"
+        private const val TAG = "TouchlessKioskService"
+
+        private const val NOTIFICATION_ID = 1337
+        private const val NOTIFICATION_CHANNEL_ID = "com.github.savan.touchlesskiosk"
+        private const val NOTIFICATION_CHANNEL_NAME = "com.github.savan.touchlesskiosk"
     }
 
     private val kioskListeners: MutableSet<IKioskListener> = mutableSetOf()
@@ -51,9 +64,9 @@ class TouchlessKioskService: Service() {
 
     private fun goForeground() {
         // create notification
-        val uuid = UUID.randomUUID()
-        val notification = NotificationUtils.getNotification(this, uuid.toString())
-        startForeground(notification.first!!, notification.second)
+        val notification = getNotification(getString(R.string.notification_msg_kiosk) + "null")
+        postNotification(notification)
+        startForeground(NOTIFICATION_ID, notification)
     }
 
     @ExperimentalCoroutinesApi
@@ -171,42 +184,80 @@ class TouchlessKioskService: Service() {
 
     @ExperimentalCoroutinesApi
     private val signalListener = object : ISignallingClient.ISignalListener {
-        override fun onKioskRegistered() {
-            Logger.d(TAG, "onKioskRegistered")
-            kioskListeners.forEach { it.onKioskRegistered() }
+        override fun onKioskRegistered(kiosk: Kiosk) {
+            Logger.d(TAG, "signalListener, onKioskRegistered")
+            // update notification
+            val text = StringBuilder()
+            text.apply {
+                append(getString(R.string.notification_msg_kiosk))
+                append(kiosk.kioskId)
+            }
+            val notification = getNotification(text.toString())
+            postNotification(notification)
+            // inform listeners
+            kioskListeners.forEach { it.onKioskRegistered(kiosk) }
         }
 
-        override fun onKioskUnregistered() {
-            Logger.d(TAG, "onKioskUnregistered")
-            kioskListeners.forEach { it.onKioskUnregistered() }
+        override fun onKioskUnregistered(kiosk: Kiosk) {
+            Logger.d(TAG, "signalListener, onKioskUnregistered")
+            // update notification
+            val text = StringBuilder()
+            text.apply {
+                append(getString(R.string.notification_msg_kiosk))
+                append("null")
+            }
+            val notification = getNotification(text.toString())
+            postNotification(notification)
+            // inform listeners
+            kioskListeners.forEach { it.onKioskUnregistered(kiosk) }
         }
 
-        override fun onConnectionRequestReceived() {
-            Logger.d(TAG, "SignallingClientListener, onConnectionRequestReceived")
+        override fun onConnectionEstablished(connection: Connection) {
+            Logger.d(TAG, "signalListener, onConnectionEstablished")
+            // start streaming screen
             rtcClient?.startStreaming(sdpObserver)
+            // update notification
+            val text = StringBuilder().apply {
+                append(getString(R.string.notification_msg_kiosk))
+                append(connection.kiosk.kioskId)
+                append(" ")
+                append(getString(R.string.notification_msg_customer))
+                append(connection.customer.customerId)
+            }
+            val notification = getNotification(text.toString())
+            postNotification(notification)
+            // inform listeners
+            kioskListeners.forEach { it.onConnectionEstablished(connection) }
         }
 
-        override fun onConnectionEstablished() {
-            Logger.d(TAG, "SignallingClientListener, onConnectionEstablished")
-        }
-
-        override fun onDisconnectionRequestReceived() {
-            Logger.d(TAG, "SignallingClientListener, onDisconnectionRequestReceived")
+        override fun onConnectionTeardown(connection: Connection) {
+            Logger.d(TAG, "signalListener, onConnectionTeardown")
+            // stop streaming screen
             rtcClient?.stopStreaming()
+            // update notification
+            val text = StringBuilder()
+            text.apply {
+                append(getString(R.string.notification_msg_kiosk))
+                append(connection.kiosk.kioskId)
+            }
+            val notification = getNotification(text.toString())
+            postNotification(notification)
+            // inform listeners
+            kioskListeners.forEach { it.onConnectionTeardown(connection) }
         }
 
         override fun onOfferReceived(description: SessionDescription) {
             // Do nothing
-            Logger.d(TAG, "SignallingClientListener, onOfferReceived")
+            Logger.d(TAG, "signalListener, onOfferReceived")
         }
 
         override fun onAnswerReceived(description: SessionDescription) {
             rtcClient?.onRemoteSessionReceived(description)
-            Logger.d(TAG, "SignallingClientListener, onAnswerReceived")
+            Logger.d(TAG, "signalListener, onAnswerReceived")
         }
 
         override fun onIceCandidateReceived(iceCandidate: IceCandidate) {
-            Logger.d(TAG, "SignallingClientListener, onIceCandidateReceived")
+            Logger.d(TAG, "signalListener, onIceCandidateReceived")
             rtcClient?.addIceCandidate(iceCandidate)
         }
     }
@@ -219,5 +270,47 @@ class TouchlessKioskService: Service() {
 
     override fun onBind(intent: Intent?): IBinder? {
         return TouchlessKiosk(this)
+    }
+
+    private fun postNotification(notification: Notification) {
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(NOTIFICATION_ID, notification)
+    }
+
+    private fun getNotification(text: String): Notification {
+        createNotificationChannel()
+        return createNotification(this, text)
+    }
+
+    @TargetApi(Build.VERSION_CODES.O)
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                NOTIFICATION_CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_LOW
+            )
+            channel.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+            val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun createNotification(context: Context, text: String): Notification {
+        // TODO update notification to have it clickable to disconnect and stop service
+        val builder = NotificationCompat.Builder(
+            context,
+            NOTIFICATION_CHANNEL_ID
+        ).apply {
+            setSmallIcon(R.mipmap.ic_launcher)
+            setContentTitle(getString(R.string.notification_title))
+            setContentText(text)
+            setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            setOngoing(true)
+            setCategory(Notification.CATEGORY_SERVICE)
+            priority = Notification.PRIORITY_LOW
+            setShowWhen(true)
+        }
+        return builder.build()
     }
 }
