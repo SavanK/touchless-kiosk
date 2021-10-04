@@ -64,10 +64,7 @@ fun Route.customerWss() {
 
     suspend fun requestKioskConnection(session: WebSocketServerSession, request: Request) {
         println("/customer, request to connect: $request")
-        val connection = getGson().fromJson<Connection>(
-            request.payload,
-            Connection::class.java
-        )
+        val connection = getObject<Connection>(request.payload)
         if (!activeConnections.containsKey(connection.kiosk)) {
             println("/customer, kiosk is free")
             // this kiosk is free, no active connections
@@ -116,10 +113,7 @@ fun Route.customerWss() {
 
     suspend fun requestKioskDisconnection(session: WebSocketServerSession, request: Request) {
         println("/customer, request to disconnect: $request")
-        val connection = getGson().fromJson<Connection>(
-            request.payload,
-            Connection::class.java
-        )
+        val connection = getObject<Connection>(request.payload)
         if (activeConnections.containsKey(connection.kiosk) &&
             activeConnections[connection.kiosk] == connection.customer
         ) {
@@ -168,10 +162,7 @@ fun Route.customerWss() {
 
     suspend fun relayWebRtcRequestToKiosk(request: Request) {
         println("/customer, request web rtc transport: $request")
-        val connection = getGson().fromJson<Connection>(
-            request.payload,
-            Connection::class.java
-        )
+        val connection = getObject<Connection>(request.payload)
         if (activeConnections.containsKey(connection.kiosk) &&
             activeConnections[connection.kiosk] == connection.customer
         ) {
@@ -184,8 +175,7 @@ fun Route.customerWss() {
     suspend fun relayWebRtcResponseToKiosk(response: Response) {
         // response for connect request
         println("/customer, request webrtc transport: $response")
-        val connection =
-            getGson().fromJson<Connection>(response.payload, Connection::class.java)
+        val connection = getObject<Connection>(response.payload)
         registeredKiosks[connection.kiosk]?.send(response.toJsonString())
     }
 
@@ -197,7 +187,7 @@ fun Route.customerWss() {
                     println("/customer, text: $text")
                     when(getClassOfObject(text)) {
                         Request::class -> {
-                            val request = getGson().fromJson<Request>(text, Request::class.java)
+                            val request = getObject<Request>(text)
                             when (request.requestId) {
                                 REQUEST_CONNECT_KIOSK -> {
                                     requestKioskConnection(this, request)
@@ -211,7 +201,7 @@ fun Route.customerWss() {
                             }
                         }
                         Response::class -> {
-                            val response = getGson().fromJson<Response>(text, Response::class.java)
+                            val response = getObject<Response>(text)
                             when (response.requestId) {
                                 REQUEST_WEB_RTC_TRANSPORT -> {
                                     relayWebRtcResponseToKiosk(response)

@@ -23,6 +23,6 @@ fun getClassOfObject(data: String): KClass<*> {
     return Any::class
 }
 
-fun getConnection(request: Request): Connection {
-    return gson.fromJson<Connection>(request.payload, Connection::class.java)
+inline fun <reified T> getObject(jsonString: String): T {
+    return getGson().fromJson<T>(jsonString, T::class.java)
 }

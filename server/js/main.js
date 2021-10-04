@@ -96,6 +96,12 @@ function consrtuctResponse(requestId, customerId, kioskId, webRtcPayload, result
 
 async function connect() {
   console.log('CONNECTING ...');
+
+  if(websocket != null) {
+    console.log('tearing down previous WebSocket connection');
+    await disconnect();
+  }
+
   websocket = new WebSocket(wsUri);
   websocket.onopen = function(evt) { onOpen(evt) };
   websocket.onclose = function(evt) { onClose(evt) };
@@ -227,6 +233,7 @@ async function disconnect() {
   hangup()
   doSend(JSON.stringify(constructRequest(REQUEST_DISCONNECT_KIOSK, customerId, getQueryParameter('kiosk'), "")));
   websocket.close();
+  websocket = null;
 }
 
 remoteVideo.addEventListener('loadedmetadata', function() {
