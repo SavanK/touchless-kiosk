@@ -26,7 +26,7 @@ connectButton.addEventListener('click', connect);
 const disconnectButton = document.getElementById('disconnect');
 disconnectButton.addEventListener('click', disconnect);
 
-const wsUri = "wss://touchless-kiosk.herokuapp.com/connectkiosk";
+const wsUri = "wss://touchless-kiosk.herokuapp.com/customer";
 let websocket;
 let activeConnection;
 const customerId = uuidv4();

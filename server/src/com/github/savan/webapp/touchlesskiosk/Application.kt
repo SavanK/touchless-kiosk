@@ -2,8 +2,8 @@ package com.github.savan.webapp.touchlesskiosk
 
 import com.github.savan.webapp.touchlesskiosk.model.Customer
 import com.github.savan.webapp.touchlesskiosk.model.Kiosk
-import com.github.savan.webapp.touchlesskiosk.routes.connectKioskRoutes
-import com.github.savan.webapp.touchlesskiosk.routes.registerKioskRoutes
+import com.github.savan.webapp.touchlesskiosk.routes.customerRoutes
+import com.github.savan.webapp.touchlesskiosk.routes.kioskRoutes
 import io.ktor.application.*
 import io.ktor.features.CallLogging
 import io.ktor.features.ContentNegotiation
@@ -57,6 +57,6 @@ fun Application.module() {
     }
 
     // init routes
-    registerKioskRoutes()
-    connectKioskRoutes()
+    kioskRoutes()
+    customerRoutes()
 }

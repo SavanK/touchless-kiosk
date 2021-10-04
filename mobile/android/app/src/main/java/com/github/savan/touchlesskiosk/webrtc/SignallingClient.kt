@@ -113,7 +113,7 @@ class SignallingClient : ISignallingClient, CoroutineScope {
         launch {
             Logger.d(TAG, "connectToServer, host:$HOST")
             client.wss(host = HOST,
-                path = "/registerkiosk") {
+                path = "/kiosk") {
                 val sendData = sendChannel.openSubscription()
                 try {
                     while (true) {
