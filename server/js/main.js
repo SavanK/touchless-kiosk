@@ -116,6 +116,7 @@ function onOpen(evt) {
 
 function onClose(evt) {
   console.log('DISCONNECTED');
+  cleanup();
 }
     
 function onMessage(evt) {
@@ -151,9 +152,12 @@ function onMessage(evt) {
               activeConnection = null;
             }
             break;
+          case REQUEST_DISCONNECT_KIOSK:
+            console.log(`RESPONSE: disconnect_kiosk ${message.result}`);
+            cleanup();
+            break;
           case REQUEST_WEB_RTC_TRANSPORT:
             console.log(`RESPONSE: web_rtc_transport ${message.result}`);
-
             break;
         }
         break;
@@ -219,8 +223,7 @@ function gotRemoteStream(evt) {
 
 function onError(evt) {
   console.log('ERROR: ' + evt.data);
-  activeConnection = null;
-  websocket = null;
+  cleanup();
 }
 
 function doSend(message) {
@@ -228,12 +231,20 @@ function doSend(message) {
   websocket.send(message);
 }
 
+function cleanup() {
+  console.log('cleanup');
+  hangup();
+  activeConnection = null;
+  if(websocket != null) {
+    websocket.close();
+  }
+  websocket = null;  
+}
+
 async function disconnect() {
   console.log("DISCONNECTING ...");
-  hangup()
   doSend(JSON.stringify(constructRequest(REQUEST_DISCONNECT_KIOSK, customerId, getQueryParameter('kiosk'), "")));
-  websocket.close();
-  websocket = null;
+  // do cleanup after getting response back from server for disconnection request
 }
 
 remoteVideo.addEventListener('loadedmetadata', function() {

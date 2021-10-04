@@ -1,5 +1,6 @@
 package com.github.savan.webapp.touchlesskiosk
 
+import com.github.savan.webapp.touchlesskiosk.model.Connection
 import com.github.savan.webapp.touchlesskiosk.model.Customer
 import com.github.savan.webapp.touchlesskiosk.model.Kiosk
 import com.github.savan.webapp.touchlesskiosk.routes.customerRoutes
@@ -20,12 +21,68 @@ import java.util.*
 
 fun main(args: Array<String>): Unit = io.ktor.server.netty.EngineMain.main(args)
 
-val registeredKiosks: MutableMap<Kiosk, WebSocketServerSession> = Collections.synchronizedMap(
+private val registeredKiosks: MutableMap<Kiosk, WebSocketServerSession> = Collections.synchronizedMap(
     mutableMapOf<Kiosk, WebSocketServerSession>())
-val activeCustomers: MutableMap<Customer, WebSocketServerSession> = Collections.synchronizedMap(
+private val registeredCustomers: MutableMap<Customer, WebSocketServerSession> = Collections.synchronizedMap(
     mutableMapOf<Customer, WebSocketServerSession>())
-val activeConnections: MutableMap<Kiosk, Customer> = Collections.synchronizedMap(
+private val activeConnections: MutableMap<Kiosk, Customer> = Collections.synchronizedMap(
     mutableMapOf<Kiosk, Customer>())
+
+enum class KIOSKSTATUS(val text: String) {
+    FREE("free"),
+    BUSY("busy"),
+    NOT_FOUND("not found")
+}
+
+fun getKioskStatus(kiosk: Kiosk): KIOSKSTATUS {
+    return if(registeredKiosks.containsKey(kiosk)) {
+        if(activeConnections.containsKey(kiosk)) KIOSKSTATUS.BUSY else KIOSKSTATUS.FREE
+    } else KIOSKSTATUS.NOT_FOUND
+}
+
+fun getKioskSocket(connection: Connection): WebSocketServerSession? {
+    return registeredKiosks[connection.kiosk]
+}
+
+fun getCustomerSocket(connection: Connection): WebSocketServerSession? {
+    return registeredCustomers[connection.customer]
+}
+
+fun saveKioskSession(kiosk: Kiosk, session: WebSocketServerSession) {
+    registeredKiosks[kiosk] = session
+}
+
+suspend fun discardKioskSession(kiosk: Kiosk) {
+    registeredKiosks[kiosk]?.let { terminateWssSession(it) }
+    registeredKiosks.remove(kiosk)
+}
+
+fun saveCustomerSession(customer: Customer, session: WebSocketServerSession) {
+    registeredCustomers[customer] = session
+}
+
+suspend fun discardCustomerSession(customer: Customer) {
+    registeredCustomers[customer]?.let { terminateWssSession(it) }
+    registeredCustomers.remove(customer)
+}
+
+fun saveConnection(connection: Connection) {
+    activeConnections[connection.kiosk] = connection.customer
+}
+
+fun breakConnection(connection: Connection) {
+    if(activeConnections[connection.kiosk] == connection.customer)
+        activeConnections.remove(connection.kiosk)
+}
+
+fun isValidConnection(connection: Connection): Boolean {
+    return activeConnections[connection.kiosk] == connection.customer
+}
+
+suspend fun terminateWssSession(session: WebSocketServerSession) {
+    session.flush()
+    session.close(null)
+}
 
 @UseExperimental(KtorExperimentalAPI::class)
 @ExperimentalCoroutinesApi

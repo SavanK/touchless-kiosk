@@ -1,9 +1,7 @@
 package com.github.savan.webapp.touchlesskiosk.routes
 
-import com.github.savan.webapp.touchlesskiosk.activeConnections
-import com.github.savan.webapp.touchlesskiosk.activeCustomers
+import com.github.savan.webapp.touchlesskiosk.*
 import com.github.savan.webapp.touchlesskiosk.model.*
-import com.github.savan.webapp.touchlesskiosk.registeredKiosks
 import io.ktor.application.*
 import io.ktor.http.cio.websocket.*
 import io.ktor.routing.*
@@ -28,27 +26,17 @@ fun Route.kioskWss() {
         // request to register new kiosk
         println("/kiosk, request to register: $request")
         val kiosk = getObject<Kiosk>(request.payload)
-        registeredKiosks[kiosk] = session
+        saveKioskSession(kiosk, session)
         println("/kiosk, kiosk: $kiosk registered")
         session.send(
-            Response(
-                REQUEST_REGISTER_KIOSK,
-                SUCCESS,
-                "",
-                "",
-                ""
-            ).toJsonString())
+            Response(REQUEST_REGISTER_KIOSK, SUCCESS, "", "", "").toJsonString()
+        )
     }
 
     suspend fun relayWebRtcRequestToCustomer(request: Request) {
         println("/kiosk, request web rtc transport: $request")
         val connection = getObject<Connection>(request.payload)
-        if (activeConnections.containsKey(connection.kiosk) &&
-            activeConnections[connection.kiosk] == connection.customer) {
-            println("/kiosk, assigned kiosk found")
-
-            activeCustomers[connection.customer]?.send(request.toJsonString())
-        }
+        getCustomerSocket(connection)?.send(request.toJsonString())
     }
 
     suspend fun processConnectKioskResponse(response: Response) {
@@ -56,30 +44,17 @@ fun Route.kioskWss() {
         println("/kiosk, response for connection: $response")
         val connection = getObject<Connection>(response.payload)
         if (response.result == SUCCESS) {
-            activeConnections[connection.kiosk] = connection.customer
-            activeCustomers[connection.customer]?.send(
-                Response(
-                    REQUEST_CONNECT_KIOSK,
-                    SUCCESS,
-                    "",
-                    connection.toJsonString(),
-                    ""
-                ).toJsonString()
+            saveConnection(connection)
+            getCustomerSocket(connection)?.send(
+                Response(REQUEST_CONNECT_KIOSK, SUCCESS, "", connection.toJsonString(), "")
+                    .toJsonString()
             )
         } else {
-            activeCustomers[connection.customer]?.send(
-                Response(
-                    REQUEST_CONNECT_KIOSK,
-                    FAILURE,
-                    "Kiosk rejected, unknown error",
-                    "",
-                    ""
-                ).toJsonString()
+            getCustomerSocket(connection)?.send(
+                Response(REQUEST_CONNECT_KIOSK, FAILURE, "Kiosk rejected, unknown error", "", "")
+                    .toJsonString()
             )
-            activeCustomers[connection.customer]?.let {
-                terminateWssSession(it)
-                activeCustomers.remove(connection.customer)
-            }
+            discardCustomerSession(connection.customer)
         }
     }
 
@@ -87,44 +62,20 @@ fun Route.kioskWss() {
         // response for connect request
         println("/kiosk, response for disconnection: $response")
         val connection = getObject<Connection>(response.payload)
-        if (response.result == SUCCESS) {
-            activeConnections.remove(connection.kiosk)
-            activeCustomers[connection.customer]?.send(
-                Response(
-                    REQUEST_DISCONNECT_KIOSK,
-                    SUCCESS,
-                    "",
-                    connection.toJsonString(),
-                    ""
-                ).toJsonString()
-            )
-            activeCustomers[connection.customer]?.let {
-                terminateWssSession(it)
-                activeCustomers.remove(connection.customer)
-            }
-        } else {
-            activeConnections.remove(connection.kiosk)
-            activeCustomers[connection.customer]?.send(
-                Response(
-                    REQUEST_DISCONNECT_KIOSK,
-                    FAILURE,
-                    "Kiosk rejected, unknown error",
-                    "",
-                    ""
-                ).toJsonString()
-            )
-        }
-        activeCustomers[connection.customer]?.let {
-            terminateWssSession(it)
-            activeCustomers.remove(connection.customer)
-        }
+        getCustomerSocket(connection)?.send(
+            Response(REQUEST_DISCONNECT_KIOSK, SUCCESS, "", connection.toJsonString(), "")
+                .toJsonString()
+        )
+
+        breakConnection(connection)
+        discardCustomerSession(connection.customer)
     }
 
     suspend fun relayWebRtcResponseToCustomer(response: Response) {
         // response for connect request
         println("/kiosk, request webrtc transport: $response")
         val connection = getObject<Connection>(response.payload)
-        activeCustomers[connection.customer]?.send(response.toJsonString())
+        getCustomerSocket(connection)?.send(response.toJsonString())
     }
 
     webSocket(path = "/kiosk") {

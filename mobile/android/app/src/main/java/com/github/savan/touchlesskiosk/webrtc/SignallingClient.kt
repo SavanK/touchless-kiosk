@@ -37,10 +37,10 @@ class SignallingClient : ISignallingClient, CoroutineScope {
         private const val HOST = "touchless-kiosk.herokuapp.com"
     }
 
-    data class Request(val requestId: String, val payload: String, val webRtcPayload: String)
+    data class Request(val requestId: String, val payload: String, val webRtcPayload: String?)
     data class Response(
         val requestId: String, val result: String, val message: String, val payload: String,
-        val webRtcPayload: String
+        val webRtcPayload: String?
     )
     // The Android SDK classes [SessionDescription] and [IceCandidate] are not matching the web SDK class structure
     // Hence the remapping
@@ -185,7 +185,9 @@ class SignallingClient : ISignallingClient, CoroutineScope {
                                                     response.payload,
                                                     Connection::class.java
                                                 )
-                                                if(connection == activeConnection) {
+                                                if(connection == activeConnection &&
+                                                    !response.webRtcPayload.isNullOrEmpty() &&
+                                                    response.webRtcPayload != "null") {
                                                     val webRtcPayload = gson.fromJson(
                                                         response.webRtcPayload,
                                                         JsonObject::class.java

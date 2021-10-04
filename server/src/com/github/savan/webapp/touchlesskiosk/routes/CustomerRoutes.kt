@@ -1,9 +1,7 @@
 package com.github.savan.webapp.touchlesskiosk.routes
 
-import com.github.savan.webapp.touchlesskiosk.activeConnections
-import com.github.savan.webapp.touchlesskiosk.activeCustomers
+import com.github.savan.webapp.touchlesskiosk.*
 import com.github.savan.webapp.touchlesskiosk.model.*
-import com.github.savan.webapp.touchlesskiosk.registeredKiosks
 import io.ktor.application.*
 import io.ktor.html.*
 import io.ktor.http.cio.websocket.*
@@ -57,126 +55,80 @@ fun Route.customerHttp() {
 
 @UseExperimental(KtorExperimentalAPI::class)
 fun Route.customerWss() {
-    suspend fun terminateWssSession(session: WebSocketServerSession) {
-        session.flush()
-        session.close(null)
-    }
-
     suspend fun requestKioskConnection(session: WebSocketServerSession, request: Request) {
         println("/customer, request to connect: $request")
         val connection = getObject<Connection>(request.payload)
-        if (!activeConnections.containsKey(connection.kiosk)) {
-            println("/customer, kiosk is free")
-            // this kiosk is free, no active connections
-            // initiate connection to kiosk
-            if(registeredKiosks[connection.kiosk] != null) {
+
+        when(val kioskStatus = getKioskStatus(connection.kiosk)) {
+            KIOSKSTATUS.FREE -> {
                 println("/customer, connecting to kiosk")
                 // save customer session info
-                activeCustomers[connection.customer] = session
+                saveCustomerSession(connection.customer, session)
                 // send connection request to kiosk
-                registeredKiosks[connection.kiosk]?.send(
-                    Request(
-                        REQUEST_CONNECT_KIOSK,
-                        connection.toJsonString(),
-                        ""
-                    ).toJsonString()
+                getKioskSocket(connection)?.send(
+                    Request(REQUEST_CONNECT_KIOSK, connection.toJsonString(), "").toJsonString()
                 )
                 // Now wait for response on the kiosk connection
-            } else {
-                println("/customer, kiosk not found")
+            }
+            KIOSKSTATUS.BUSY, KIOSKSTATUS.NOT_FOUND -> {
+                println("/customer, ${kioskStatus.text}")
                 session.send(
-                    Response(
-                        REQUEST_CONNECT_KIOSK,
-                        FAILURE,
-                        "Kiosk not found",
-                        "",
-                        ""
-                    ).toJsonString()
+                    Response(REQUEST_CONNECT_KIOSK, FAILURE, kioskStatus.text, "", "")
+                        .toJsonString()
                 )
                 terminateWssSession(session)
             }
-        } else {
-            // this kiosk is being used by someone else, refuse new connection
-            println("/customer, kiosk is being used by another customer")
-            session.send(
-                Response(
-                    REQUEST_CONNECT_KIOSK,
-                    FAILURE,
-                    "Kiosk is being used by another customer",
-                    "",
-                    ""
-                ).toJsonString()
-            )
-            terminateWssSession(session)
         }
     }
 
     suspend fun requestKioskDisconnection(session: WebSocketServerSession, request: Request) {
         println("/customer, request to disconnect: $request")
         val connection = getObject<Connection>(request.payload)
-        if (activeConnections.containsKey(connection.kiosk) &&
-            activeConnections[connection.kiosk] == connection.customer
-        ) {
-            println("/customer, assigned kiosk found")
-            // this kiosk is being currently assigned to this customer
-            // initiate disconnection to kiosk
-            if(registeredKiosks[connection.kiosk] != null) {
-                println("/customer, connecting to kiosk")
-                // send disconnection request to kiosk
-                registeredKiosks[connection.kiosk]?.send(
-                    Request(
-                        REQUEST_DISCONNECT_KIOSK,
-                        connection.toJsonString(),
-                        ""
-                    ).toJsonString()
-                )
-                // Now wait for response on the kiosk connection
-            } else {
-                println("/customer, kiosk not found")
+        when(val kioskStatus = getKioskStatus(connection.kiosk)) {
+            KIOSKSTATUS.BUSY -> {
+                if(isValidConnection(connection)) {
+                    // kiosk assigned to this customer
+                    println("/customer, disconnecting from kiosk")
+                    // send disconnection request to kiosk
+                    getKioskSocket(connection)?.send(
+                        Request(
+                            REQUEST_DISCONNECT_KIOSK,
+                            connection.toJsonString(),
+                            ""
+                        ).toJsonString()
+                    )
+                    // Now wait for response on the kiosk connection
+                } else {
+                    // kiosk assigned to a different customer
+                    println("/customer, kiosk assigned to a different customer")
+                    session.send(
+                        Response(REQUEST_DISCONNECT_KIOSK, FAILURE, kioskStatus.text, "", "")
+                            .toJsonString()
+                    )
+                    terminateWssSession(session)
+                }
+            }
+            KIOSKSTATUS.FREE, KIOSKSTATUS.NOT_FOUND -> {
+                println("/customer, ${kioskStatus.text}")
                 session.send(
-                    Response(
-                        REQUEST_DISCONNECT_KIOSK,
-                        FAILURE,
-                        "Kiosk not found",
-                        "",
-                        ""
-                    ).toJsonString()
+                    Response(REQUEST_DISCONNECT_KIOSK, FAILURE, kioskStatus.text, "", "")
+                        .toJsonString()
                 )
                 terminateWssSession(session)
             }
-        } else {
-            // this kiosk is being used by someone else, refuse teardown
-            println("/customer, kiosk is being used by another customer")
-            session.send(
-                Response(
-                    REQUEST_DISCONNECT_KIOSK,
-                    FAILURE,
-                    "Kiosk is being used by another customer",
-                    "",
-                    ""
-                ).toJsonString()
-            )
-            terminateWssSession(session)
         }
     }
 
     suspend fun relayWebRtcRequestToKiosk(request: Request) {
-        println("/customer, request web rtc transport: $request")
+        println("/customer, relayWebRtcRequestToKiosk: $request")
         val connection = getObject<Connection>(request.payload)
-        if (activeConnections.containsKey(connection.kiosk) &&
-            activeConnections[connection.kiosk] == connection.customer
-        ) {
-            println("/customer, assigned kiosk found")
-
-            registeredKiosks[connection.kiosk]?.send(request.toJsonString())
-        }
+        getKioskSocket(connection)?.send(request.toJsonString())
     }
 
     suspend fun relayWebRtcResponseToKiosk(response: Response) {
-        // response for connect request
-        println("/customer, request webrtc transport: $response")
+        println("/customer, relayWebRtcResponseToKiosk: $response")
         val connection = getObject<Connection>(response.payload)
-        registeredKiosks[connection.kiosk]?.send(response.toJsonString())
+        getKioskSocket(connection)?.send(response.toJsonString())
     }
 
     webSocket(path = "/customer") {
