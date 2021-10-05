@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:allowBackup="true"
@@ -24,7 +25,9 @@
 
         <service
             android:name=".TouchlessKioskService"
-            android:foregroundServiceType="mediaProjection" />
+            android:foregroundServiceType="mediaProjection"
+            android:enabled="true"
+            android:exported="true" />
     </application>
 
 </manifest>

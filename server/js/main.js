@@ -260,7 +260,7 @@ remoteVideo.addEventListener('resize', () => {
     console.log('Setup time: ' + elapsedTime.toFixed(3) + 'ms');
     startTime = null;
   }
-  var videoAR = remoteVideo.videoHeight/remoteVideo.videoWidth;
+  /*var videoAR = remoteVideo.videoHeight/remoteVideo.videoWidth;
   var newHeight = remoteVideo.videoHeight;
   var newWidth = remoteVideo.videoWidth;
   console.log(`screen.availHeight=${window.screen.availHeight}`);
@@ -271,7 +271,7 @@ remoteVideo.addEventListener('resize', () => {
     console.log(`newHeight: ${newHeight} newWidth: ${newWidth}`);
   }
   remoteVideo.height = newHeight;
-  remoteVideo.width = newWidth;
+  remoteVideo.width = newWidth;*/
 });
 
 async function onIceCandidate(evt) {

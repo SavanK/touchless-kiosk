@@ -34,7 +34,7 @@ class SignallingClient : ISignallingClient, CoroutineScope {
 
         private const val KEY_KIOSK_ID = "kiosk_id"
 
-        private const val HOST = "touchless-kiosk.herokuapp.com"
+        const val HOST = "touchless-kiosk.herokuapp.com"
     }
 
     data class Request(val requestId: String, val payload: String, val webRtcPayload: String?)
@@ -95,6 +95,10 @@ class SignallingClient : ISignallingClient, CoroutineScope {
 
     override fun unregisterKiosk() {
         // TODO build unregister kiosk flow
+    }
+
+    override fun getRegisteredKiosk(): Kiosk? {
+        return myKiosk
     }
 
     override fun sendWebRtcPayRequest(webRtcPayload: Any) {

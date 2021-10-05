@@ -7,11 +7,14 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.os.Build
-import android.os.IBinder
-import android.view.MotionEvent
+import android.graphics.PixelFormat
+import android.os.*
+import android.provider.Settings
+import android.view.*
+import android.widget.ImageView
 import androidx.core.app.NotificationCompat
 import com.github.savan.touchlesskiosk.utils.Logger
+import com.github.savan.touchlesskiosk.utils.QRCodeUtils
 import com.github.savan.touchlesskiosk.webrtc.*
 import com.github.savan.touchlesskiosk.webrtc.model.Connection
 import com.github.savan.touchlesskiosk.webrtc.model.Kiosk
@@ -28,6 +31,9 @@ class TouchlessKioskService: Service() {
         private const val NOTIFICATION_ID = 1337
         private const val NOTIFICATION_CHANNEL_ID = "com.github.savan.touchlesskiosk"
         private const val NOTIFICATION_CHANNEL_NAME = "com.github.savan.touchlesskiosk"
+
+        private const val QR_CODE_WIDTH = 200
+        private const val QR_CODE_HEIGHT = 200
     }
 
     private val kioskListeners: MutableSet<IKioskListener> = mutableSetOf()
@@ -35,6 +41,10 @@ class TouchlessKioskService: Service() {
     private var rtcClient: IRtcClient? = null
     @ExperimentalCoroutinesApi
     private var signallingClient: SignallingClient? = null
+
+    private var qrCodeOverlay: View? = null
+    private var qrCodeView: ImageView? = null
+    private lateinit var uiHandler: Handler
 
     @ExperimentalCoroutinesApi
     private val sdpObserver = object : AppSdpObserver() {
@@ -57,8 +67,35 @@ class TouchlessKioskService: Service() {
     override fun onCreate() {
         Logger.d(TAG, "onCreate")
         super.onCreate()
+
+        uiHandler = UiHandler(this)
+
+        setupQrCodeView()
         initialize()
         goForeground()
+    }
+
+    private fun setupQrCodeView() {
+        if(canDrawOverlays()) {
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+
+            qrCodeOverlay = LayoutInflater.from(this).inflate(R.layout.floating_qr_code, null)
+
+            //Add the view to the window.
+            val windowParams = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.BOTTOM or Gravity.END
+            }
+
+            qrCodeView = qrCodeOverlay?.findViewById(R.id.qrCodeView)
+            windowManager.addView(qrCodeOverlay, windowParams)
+            qrCodeOverlay?.visibility = View.GONE
+        }
     }
 
     private fun goForeground() {
@@ -193,6 +230,9 @@ class TouchlessKioskService: Service() {
             }
             val notification = getNotification(text.toString())
             postNotification(notification)
+
+            uiHandler.sendEmptyMessage(UiHandler.MSG_SHOW_QR_CODE)
+
             // inform listeners
             kioskListeners.forEach { it.onKioskRegistered(kiosk) }
         }
@@ -207,6 +247,9 @@ class TouchlessKioskService: Service() {
             }
             val notification = getNotification(text.toString())
             postNotification(notification)
+
+            uiHandler.sendEmptyMessage(UiHandler.MSG_HIDE_QR_CODE)
+
             // inform listeners
             kioskListeners.forEach { it.onKioskUnregistered(kiosk) }
         }
@@ -225,6 +268,9 @@ class TouchlessKioskService: Service() {
             }
             val notification = getNotification(text.toString())
             postNotification(notification)
+
+            uiHandler.sendEmptyMessage(UiHandler.MSG_HIDE_QR_CODE)
+
             // inform listeners
             kioskListeners.forEach { it.onConnectionEstablished(connection) }
         }
@@ -241,6 +287,9 @@ class TouchlessKioskService: Service() {
             }
             val notification = getNotification(text.toString())
             postNotification(notification)
+
+            uiHandler.sendEmptyMessage(UiHandler.MSG_SHOW_QR_CODE)
+
             // inform listeners
             kioskListeners.forEach { it.onConnectionTeardown(connection) }
         }
@@ -258,6 +307,47 @@ class TouchlessKioskService: Service() {
         override fun onIceCandidateReceived(iceCandidate: IceCandidate) {
             Logger.d(TAG, "signalListener, onIceCandidateReceived")
             rtcClient?.addIceCandidate(iceCandidate)
+        }
+    }
+
+    @ExperimentalCoroutinesApi
+    private fun showQrCode() {
+        // draw QR code overlay
+        signallingClient?.getRegisteredKiosk()?.kioskId?.let { kioskId ->
+            val url = "https://" + SignallingClient.HOST + "/connect?kiosk=" + kioskId
+            val qrCodeBitmap = QRCodeUtils.generateQRCode(url, QR_CODE_WIDTH, QR_CODE_HEIGHT)
+
+            if(qrCodeOverlay == null) {
+                setupQrCodeView()
+            }
+
+            qrCodeView?.setImageBitmap(qrCodeBitmap)
+            qrCodeOverlay?.visibility = View.VISIBLE
+        }
+    }
+
+    private fun hideQrCode() {
+        // hide QR code overlay
+        qrCodeOverlay?.visibility = View.GONE
+    }
+
+    private class UiHandler(val touchlessKioskService: TouchlessKioskService):
+        Handler(touchlessKioskService.mainLooper) {
+        companion object {
+            const val MSG_SHOW_QR_CODE = 1001;
+            const val MSG_HIDE_QR_CODE = 1002;
+        }
+
+        @ExperimentalCoroutinesApi
+        override fun handleMessage(msg: Message) {
+            when(msg.what) {
+                MSG_SHOW_QR_CODE -> {
+                    touchlessKioskService.showQrCode()
+                }
+                MSG_HIDE_QR_CODE -> {
+                    touchlessKioskService.hideQrCode()
+                }
+            }
         }
     }
 
@@ -311,5 +401,29 @@ class TouchlessKioskService: Service() {
             setShowWhen(true)
         }
         return builder.build()
+    }
+
+    private fun canDrawOverlays(): Boolean {
+        if (Settings.canDrawOverlays(this)) return true
+        try {
+            val mgr = getSystemService(WINDOW_SERVICE) as WindowManager
+                ?: return false
+            //getSystemService might return null
+            val viewToAdd = View(this)
+            val params = WindowManager.LayoutParams(
+                0,
+                0,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT,
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSPARENT
+            )
+            viewToAdd.layoutParams = params
+            mgr.addView(viewToAdd, params)
+            mgr.removeView(viewToAdd)
+            return true
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return false
     }
 }

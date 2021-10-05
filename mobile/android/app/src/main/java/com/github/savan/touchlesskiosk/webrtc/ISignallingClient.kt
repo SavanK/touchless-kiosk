@@ -29,6 +29,8 @@ interface ISignallingClient {
 
     fun unregisterKiosk()
 
+    fun getRegisteredKiosk(): Kiosk?
+
     fun sendWebRtcPayRequest(webRtcPayload: Any)
 
     fun destroy()

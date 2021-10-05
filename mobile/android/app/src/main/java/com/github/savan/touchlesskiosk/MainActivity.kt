@@ -6,23 +6,31 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.graphics.PixelFormat
 import android.media.projection.MediaProjectionManager
-import androidx.appcompat.app.AppCompatActivity
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.provider.Settings
+import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
 import com.github.savan.touchlesskiosk.utils.Logger
 import com.github.savan.touchlesskiosk.webrtc.IRtcClient
 import com.github.savan.touchlesskiosk.webrtc.model.Connection
 import com.github.savan.touchlesskiosk.webrtc.model.Kiosk
+
 
 class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MainActivity"
 
         private const val REQUEST_CODE_SCREEN_CAPTURE = 1009
+        private const val REQUEST_CODE_DRAW_OVER_OTHER_APPS = 1010
     }
 
     private lateinit var connectionStatusView: TextView
@@ -119,14 +127,24 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if(!canDrawOverlays()) {
+            requestDrawOverOtherAppsPermission()
+        }
         startTouchlessKioskService()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if(requestCode == REQUEST_CODE_SCREEN_CAPTURE && resultCode == Activity.RESULT_OK) {
-            Logger.d(TAG, "onActivityResult, permission for screen capture granted")
-            data?.let { touchlessKiosk?.setupStreaming(it) }
+        if(resultCode == Activity.RESULT_OK) {
+            when(requestCode) {
+                REQUEST_CODE_SCREEN_CAPTURE -> {
+                    Logger.d(TAG, "onActivityResult, permission for screen capture granted")
+                    data?.let { touchlessKiosk?.setupStreaming(it) }
+                }
+                REQUEST_CODE_DRAW_OVER_OTHER_APPS -> {
+                    Logger.d(TAG, "onActivityResult, permission for draw over other apps granted")
+                }
+            }
         }
     }
 
@@ -166,5 +184,37 @@ class MainActivity : AppCompatActivity() {
             Logger.d(TAG, "toggleScreenCapture, stop screen recording")
             touchlessKiosk?.teardownStreaming()
         }
+    }
+
+    private fun requestDrawOverOtherAppsPermission() {
+        val intent = Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:$packageName")
+        )
+        startActivityForResult(intent, REQUEST_CODE_DRAW_OVER_OTHER_APPS)
+    }
+
+    private fun canDrawOverlays(): Boolean {
+        if (Settings.canDrawOverlays(this)) return true
+        try {
+            val mgr = getSystemService(WINDOW_SERVICE) as WindowManager
+                ?: return false
+            //getSystemService might return null
+            val viewToAdd = View(this)
+            val params = WindowManager.LayoutParams(
+                0,
+                0,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT,
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSPARENT
+            )
+            viewToAdd.layoutParams = params
+            mgr.addView(viewToAdd, params)
+            mgr.removeView(viewToAdd)
+            return true
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return false
     }
 }
