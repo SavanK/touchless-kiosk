@@ -12,10 +12,19 @@ const PAYLOAD = "payload";
 const WEB_RTC_PAYLOAD = "webRtcPayload";
 const MESSAGE = "message";
 const RESULT = "result";
+const MOUSE_EVENT_PAYLOAD = "mouseEventPayload";
+const MOUSE_EVENT_TYPE = "mouseEventType";
+const TIMESTAMP = "timeStamp";
+const X_POS = "x";
+const Y_POS = "y";
+const MOUSE_DOWN = "mouseDown";
+const MOUSE_MOVE = "mouseMove";
+const MOUSE_UP = "mouseUp";
 
 const REQUEST_CONNECT_KIOSK = "connect_kiosk";
 const REQUEST_WEB_RTC_TRANSPORT = "web_rtc_transport";
 const REQUEST_DISCONNECT_KIOSK = "disconnect_kiosk";
+const REQUEST_MOUSE_EVENT = "mouse_event";
 
 const MESSAGE_TYPE_REQUEST = "request";
 const MESSAGE_TYPE_RESPONSE = "response";
@@ -38,6 +47,7 @@ const offerOptions = {
 };
 let startTime;
 const remoteVideo = document.getElementById('remoteVideo');
+var lastMoveEventTime = 0;
 
 function uuidv4() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -62,7 +72,7 @@ function getMessageType(message) {
   return '';
 }
 
-function constructRequest(requestId, customerId, kioskId, webRtcPayload) {
+function constructRequest(requestId, customerId, kioskId, webRtcPayload, mouseEventPayload) {
   var customer = {};
   customer[CUSTOMER_ID] = customerId;
   var kiosk = {};
@@ -74,6 +84,7 @@ function constructRequest(requestId, customerId, kioskId, webRtcPayload) {
   request[REQUEST_ID] = requestId;
   request[PAYLOAD] = JSON.stringify(connection);
   request[WEB_RTC_PAYLOAD] = webRtcPayload;
+  request[MOUSE_EVENT_PAYLOAD] = mouseEventPayload;
   return request;
 }
 
@@ -94,6 +105,15 @@ function consrtuctResponse(requestId, customerId, kioskId, webRtcPayload, result
   return response;
 }
 
+function constructMouseEvent(mouseEventType, timeStamp, x, y) {
+  var mouseEvent = {};
+  mouseEvent[MOUSE_EVENT_TYPE] = mouseEventType;
+  mouseEvent[TIMESTAMP] = timeStamp;
+  mouseEvent[X_POS] = x;
+  mouseEvent[Y_POS] = y;
+  return mouseEvent;
+}
+
 async function connect() {
   console.log('CONNECTING ...');
 
@@ -111,7 +131,7 @@ async function connect() {
 
 function onOpen(evt) {
   console.log('CONNECTED');
-  doSend(JSON.stringify(constructRequest(REQUEST_CONNECT_KIOSK, customerId, getQueryParameter('kiosk'), "")));
+  doSend(JSON.stringify(constructRequest(REQUEST_CONNECT_KIOSK, customerId, getQueryParameter('kiosk'), "", "")));
 }
 
 function onClose(evt) {
@@ -226,7 +246,7 @@ function onError(evt) {
   cleanup();
 }
 
-function doSend(message) {
+async function doSend(message) {
   console.log("SENT: " + message);
   websocket.send(message);
 }
@@ -243,8 +263,84 @@ function cleanup() {
 
 async function disconnect() {
   console.log("DISCONNECTING ...");
-  doSend(JSON.stringify(constructRequest(REQUEST_DISCONNECT_KIOSK, customerId, getQueryParameter('kiosk'), "")));
+  doSend(JSON.stringify(constructRequest(REQUEST_DISCONNECT_KIOSK, customerId, getQueryParameter('kiosk'), "", "")));
   // do cleanup after getting response back from server for disconnection request
+}
+
+remoteVideo.addEventListener('mousedown', function(e) {
+  sendMouseEvent(MOUSE_DOWN, e.timeStamp, e.x, e.y);
+})
+
+remoteVideo.addEventListener('mousemove', function(e) {
+  sendMouseEvent(MOUSE_MOVE, e.timeStamp, e.x, e.y);
+})
+
+remoteVideo.addEventListener('mouseup', function(e) {
+  sendMouseEvent(MOUSE_UP, e.timeStamp, e.x, e.y);
+})
+
+var touchId = null;
+
+remoteVideo.addEventListener('touchstart', function(e) {
+  e.preventDefault();
+  if(touchId == null) {
+    var touch = e.targetTouches.item(0);
+    touchId = touch.identifier;
+    sendMouseEvent(MOUSE_DOWN, e.timeStamp, touch.clientX, touch.clientY);
+  }
+})
+
+remoteVideo.addEventListener('touchmove', function(e) {
+  e.preventDefault();
+  if(touchId != null) {
+    for(var i=0;i<e.targetTouches.length;i++) {
+      var touch = e.targetTouches.item(i);
+      if(touch.identifier==touchId) {
+        sendMouseEvent(MOUSE_MOVE, e.timeStamp, touch.clientX, touch.clientY);
+        break;
+      }
+    }
+  }
+})
+
+remoteVideo.addEventListener('touchend', function(e) {
+  e.preventDefault();
+  if(touchId != null) {
+    sendMouseEvent(MOUSE_UP, e.timeStamp, 0, 0);
+    touchId = null;
+  }
+})
+
+var isDown = false;
+
+function sendMouseEvent(mouseEventType, timeStamp, x, y) {
+  if(activeConnection != null) {
+    isDown = isDown || mouseEventType==MOUSE_DOWN;
+
+    if(isDown) {
+      if(mouseEventType==MOUSE_MOVE && timeStamp-lastMoveEventTime<=50) {
+        // skip
+        return;
+      }
+
+      if(mouseEventType==MOUSE_MOVE) {
+        lastMoveEventTime = timeStamp;
+      }
+      var rect = remoteVideo.getBoundingClientRect();
+      var xPos = Math.floor(x - rect.left)/remoteVideo.videoWidth;
+      var yPos = Math.floor(y - rect.top)/remoteVideo.videoHeight;
+      console.log(`${mouseEventType}, t=${timeStamp}, x=${xPos}, y=${yPos}`);
+      doSend(JSON.stringify(constructRequest(REQUEST_MOUSE_EVENT,
+        activeConnection.customer.customerId,
+        activeConnection.kiosk.kioskId,
+        "",
+        JSON.stringify(constructMouseEvent(mouseEventType, timeStamp, xPos, yPos)))));
+
+      if(mouseEventType==MOUSE_UP) {
+        isDown = false;
+      }
+    }
+  }
 }
 
 remoteVideo.addEventListener('loadedmetadata', function() {

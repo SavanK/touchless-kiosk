@@ -13,11 +13,13 @@ import android.provider.Settings
 import android.view.*
 import android.widget.ImageView
 import androidx.core.app.NotificationCompat
+import com.github.savan.touchlesskiosk.input.InputInjectionService
 import com.github.savan.touchlesskiosk.utils.Logger
 import com.github.savan.touchlesskiosk.utils.QRCodeUtils
 import com.github.savan.touchlesskiosk.webrtc.*
 import com.github.savan.touchlesskiosk.webrtc.model.Connection
 import com.github.savan.touchlesskiosk.webrtc.model.Kiosk
+import com.github.savan.touchlesskiosk.webrtc.model.MouseEvent
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import org.webrtc.IceCandidate
 import org.webrtc.PeerConnection
@@ -308,6 +310,15 @@ class TouchlessKioskService: Service() {
             Logger.d(TAG, "signalListener, onIceCandidateReceived")
             rtcClient?.addIceCandidate(iceCandidate)
         }
+
+        override fun onMouseEventReceived(mouseEvent: MouseEvent) {
+            Logger.d(TAG, "signalListener, onMouseEventReceived")
+
+            uiHandler.sendMessage(
+                Message.obtain(uiHandler, UiHandler.MSG_INJECT_MOUSE_EVENT,
+                    0, 0, mouseEvent)
+            )
+        }
     }
 
     @ExperimentalCoroutinesApi
@@ -331,11 +342,17 @@ class TouchlessKioskService: Service() {
         qrCodeOverlay?.visibility = View.GONE
     }
 
+    private fun injectMouseEvent(mouseEvent: MouseEvent) {
+        val intent = InputInjectionService.createInjectMouseEventIntent(this, mouseEvent)
+        startService(intent)
+    }
+
     private class UiHandler(val touchlessKioskService: TouchlessKioskService):
         Handler(touchlessKioskService.mainLooper) {
         companion object {
             const val MSG_SHOW_QR_CODE = 1001;
             const val MSG_HIDE_QR_CODE = 1002;
+            const val MSG_INJECT_MOUSE_EVENT = 1003;
         }
 
         @ExperimentalCoroutinesApi
@@ -346,6 +363,9 @@ class TouchlessKioskService: Service() {
                 }
                 MSG_HIDE_QR_CODE -> {
                     touchlessKioskService.hideQrCode()
+                }
+                MSG_INJECT_MOUSE_EVENT -> {
+                    touchlessKioskService.injectMouseEvent(msg.obj as MouseEvent)
                 }
             }
         }

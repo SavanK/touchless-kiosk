@@ -5,6 +5,7 @@ import com.github.savan.touchlesskiosk.utils.Logger
 import com.github.savan.touchlesskiosk.utils.StorageUtils
 import com.github.savan.touchlesskiosk.webrtc.model.Connection
 import com.github.savan.touchlesskiosk.webrtc.model.Kiosk
+import com.github.savan.touchlesskiosk.webrtc.model.MouseEvent
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import io.ktor.client.*
@@ -31,17 +32,17 @@ class SignallingClient : ISignallingClient, CoroutineScope {
         private const val REQUEST_CONNECT_KIOSK = "connect_kiosk"
         private const val REQUEST_DISCONNECT_KIOSK = "disconnect_kiosk"
         private const val REQUEST_WEB_RTC_TRANSPORT = "web_rtc_transport"
+        private const val REQUEST_MOUSE_EVENT = "mouse_event"
 
         private const val KEY_KIOSK_ID = "kiosk_id"
 
         const val HOST = "touchless-kiosk.herokuapp.com"
     }
 
-    data class Request(val requestId: String, val payload: String, val webRtcPayload: String?)
-    data class Response(
-        val requestId: String, val result: String, val message: String, val payload: String,
-        val webRtcPayload: String?
-    )
+    data class Request(val requestId: String, val payload: String, val webRtcPayload: String?,
+                       val mouseEventPayload: String?)
+    data class Response(val requestId: String, val result: String, val message: String, val payload: String,
+                        val webRtcPayload: String?)
     // The Android SDK classes [SessionDescription] and [IceCandidate] are not matching the web SDK class structure
     // Hence the remapping
     data class SessionDescriptionWeb(val sdp: String, val type: String)
@@ -85,7 +86,10 @@ class SignallingClient : ISignallingClient, CoroutineScope {
                     myKiosk = Kiosk(kioskId)
                     myKiosk?.let { kiosk ->
                         Logger.d(TAG, "registerKiosk, registering $kiosk with server")
-                        val request = Request(REQUEST_REGISTER_KIOSK, toJsonString(kiosk), "")
+                        val request = Request(REQUEST_REGISTER_KIOSK,
+                            toJsonString(kiosk),
+                            "",
+                            "")
                         send(request)
                     }
                 }
@@ -171,6 +175,21 @@ class SignallingClient : ISignallingClient, CoroutineScope {
                                                     activeConnection = null
                                                 }
                                             }
+                                            REQUEST_MOUSE_EVENT -> {
+                                                val connection = gson.fromJson<Connection>(
+                                                    request.payload,
+                                                    Connection::class.java
+                                                )
+                                                if(connection == activeConnection) {
+                                                    val mouseEvent = gson.fromJson<MouseEvent>(
+                                                        request.mouseEventPayload,
+                                                        MouseEvent::class.java
+                                                    )
+
+                                                    Logger.d(TAG, "received mouse event: $mouseEvent")
+                                                    signalListener?.onMouseEventReceived(mouseEvent)
+                                                }
+                                            }
                                         }
                                     }
                                     Response::class -> {
@@ -246,7 +265,7 @@ class SignallingClient : ISignallingClient, CoroutineScope {
                 send(
                     Request(
                         REQUEST_WEB_RTC_TRANSPORT, toJsonString(it),
-                        toJsonString(webRtcPayload)
+                        toJsonString(webRtcPayload), ""
                     )
                 )
             }

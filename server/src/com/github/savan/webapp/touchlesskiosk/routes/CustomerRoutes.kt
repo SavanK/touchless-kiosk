@@ -66,7 +66,11 @@ fun Route.customerWss() {
                 saveCustomerSession(connection.customer, session)
                 // send connection request to kiosk
                 getKioskSocket(connection)?.send(
-                    Request(REQUEST_CONNECT_KIOSK, connection.toJsonString(), "").toJsonString()
+                    Request(REQUEST_CONNECT_KIOSK,
+                        connection.toJsonString(),
+                        "",
+                        ""
+                    ).toJsonString()
                 )
                 // Now wait for response on the kiosk connection
             }
@@ -94,6 +98,7 @@ fun Route.customerWss() {
                         Request(
                             REQUEST_DISCONNECT_KIOSK,
                             connection.toJsonString(),
+                            "",
                             ""
                         ).toJsonString()
                     )
@@ -125,6 +130,12 @@ fun Route.customerWss() {
         getKioskSocket(connection)?.send(request.toJsonString())
     }
 
+    suspend fun relayMouseEvent(request: Request) {
+        println("/customer, relayMouseEvent: $request")
+        val connection = getObject<Connection>(request.payload)
+        getKioskSocket(connection)?.send(request.toJsonString())
+    }
+
     suspend fun relayWebRtcResponseToKiosk(response: Response) {
         println("/customer, relayWebRtcResponseToKiosk: $response")
         val connection = getObject<Connection>(response.payload)
@@ -149,6 +160,9 @@ fun Route.customerWss() {
                                 }
                                 REQUEST_WEB_RTC_TRANSPORT -> {
                                     relayWebRtcRequestToKiosk(request)
+                                }
+                                REQUEST_MOUSE_EVENT -> {
+                                    relayMouseEvent(request)
                                 }
                             }
                         }

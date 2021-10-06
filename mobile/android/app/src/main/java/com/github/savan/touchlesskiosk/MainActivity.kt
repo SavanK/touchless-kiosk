@@ -13,12 +13,15 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.provider.Settings
+import android.provider.Settings.SettingNotFoundException
+import android.text.TextUtils.SimpleStringSplitter
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.github.savan.touchlesskiosk.input.InputInjectionService
 import com.github.savan.touchlesskiosk.utils.Logger
 import com.github.savan.touchlesskiosk.webrtc.IRtcClient
 import com.github.savan.touchlesskiosk.webrtc.model.Connection
@@ -129,6 +132,8 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         if(!canDrawOverlays()) {
             requestDrawOverOtherAppsPermission()
+        } else if(!isInputInjectionServiceEnabled()) {
+            requestInputInjectionServiceToBeEnabled()
         }
         startTouchlessKioskService()
     }
@@ -204,7 +209,7 @@ class MainActivity : AppCompatActivity() {
             val params = WindowManager.LayoutParams(
                 0,
                 0,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSPARENT
             )
@@ -217,4 +222,58 @@ class MainActivity : AppCompatActivity() {
         }
         return false
     }
+
+    private fun isInputInjectionServiceEnabled(): Boolean {
+        var accessibilityEnabled = 0
+        val service = packageName + "/" + InputInjectionService::class.java.canonicalName
+        try {
+            accessibilityEnabled = Settings.Secure.getInt(
+                applicationContext.contentResolver,
+                Settings.Secure.ACCESSIBILITY_ENABLED
+            )
+            Logger.d(TAG, "accessibilityEnabled = $accessibilityEnabled")
+        } catch (e: SettingNotFoundException) {
+            Logger.e(
+                TAG, "Error finding setting, default accessibility to not found: "
+                        + e.message
+            )
+        }
+        val mStringColonSplitter = SimpleStringSplitter(':')
+
+        if (accessibilityEnabled == 1) {
+            Logger.d(TAG, "***ACCESSIBILITY IS ENABLED*** -----------------")
+            val settingValue = Settings.Secure.getString(
+                applicationContext.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            )
+            if (settingValue != null) {
+                mStringColonSplitter.setString(settingValue)
+                while (mStringColonSplitter.hasNext()) {
+                    val accessibilityService = mStringColonSplitter.next()
+                    Logger.d(
+                        TAG,
+                        "-------------- > accessibilityService :: $accessibilityService $service"
+                    )
+                    if (accessibilityService.equals(service, ignoreCase = true)) {
+                        Logger.d(
+                            TAG,
+                            "We've found the correct setting - accessibility is switched on!"
+                        )
+                        return true
+                    }
+                }
+            }
+        } else {
+            Logger.d(TAG, "***ACCESSIBILITY IS DISABLED***")
+        }
+
+        return false
+    }
+
+    private fun requestInputInjectionServiceToBeEnabled() {
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        startActivity(intent)
+    }
+
 }
